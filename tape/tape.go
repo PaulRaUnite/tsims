@@ -1,18 +1,18 @@
 package tape
 
 type Tape struct {
-	buffer        []rune
-	zeroPos       uint64
-	currentPos    uint64
-	defaultSymbol rune
+	buffer      []rune
+	zeroPos     uint64
+	currentPos  uint64
+	emptySymbol rune
 }
 
-func Create(content string, defaultSymbol rune) Tape {
+func Create(content string, emptySymbol rune) Tape {
 	return Tape{
-		buffer:        []rune(content),
-		zeroPos:       0,
-		currentPos:    0,
-		defaultSymbol: defaultSymbol,
+		buffer:      []rune(content),
+		zeroPos:     0,
+		currentPos:  0,
+		emptySymbol: emptySymbol,
 	}
 }
 
@@ -23,53 +23,58 @@ const (
 	right leftRight = false
 )
 
-const rellocationLenght uint64 = 16
+const reallocationLength uint64 = 16
 
 func (tape *Tape) reallocate(lr leftRight) {
 	switch lr {
 	case left:
-		leftBuf := make([]rune, rellocationLenght)
+		leftBuf := make([]rune, reallocationLength)
 		for i := range leftBuf {
-			leftBuf[i] = tape.defaultSymbol
+			leftBuf[i] = tape.emptySymbol
 		}
 		*tape = Tape{
-			buffer:        append(leftBuf, tape.buffer...),
-			zeroPos:       rellocationLenght + tape.zeroPos,
-			currentPos:    rellocationLenght + tape.currentPos,
-			defaultSymbol: tape.defaultSymbol,
+			buffer:      append(leftBuf, tape.buffer...),
+			zeroPos:     reallocationLength + tape.zeroPos,
+			currentPos:  reallocationLength + tape.currentPos,
+			emptySymbol: tape.emptySymbol,
 		}
 	case right:
-		rightBuf := make([]rune, rellocationLenght)
+		rightBuf := make([]rune, reallocationLength)
 		for i := range rightBuf {
-			rightBuf[i] = tape.defaultSymbol
+			rightBuf[i] = tape.emptySymbol
 		}
 		tape.buffer = append(tape.buffer, rightBuf...)
 	}
 }
 
 func (tape Tape) Now() rune {
+	if tape.currentPos == 0 && len(tape.buffer) == 0 {
+		return tape.emptySymbol
+	}
 	return tape.buffer[tape.currentPos]
 }
 
-func (tape *Tape) LeftShifting() rune {
+func (tape *Tape) LeftShift() {
 	if tape.currentPos == 0 {
 		tape.reallocate(left)
 	}
 	tape.currentPos--
-	return tape.Now()
 }
 
-func (tape *Tape) RightShifting() rune {
+func (tape *Tape) RightShift() {
 	tape.currentPos++
 	if tape.currentPos == uint64(len(tape.buffer)) {
 		tape.reallocate(right)
 	}
-	return tape.Now()
+}
+
+func (tape Tape) Set(symbol rune) {
+	tape.buffer[tape.currentPos] = symbol
 }
 
 func (tape Tape) String() string {
 	top := string(tape.buffer)
-	pos := make([]rune, tape.currentPos+1, len(tape.buffer))
+	pos := make([]rune, tape.currentPos+1, len(tape.buffer)+1)
 	for i := range pos {
 		if uint64(i) == tape.currentPos {
 			pos[i] = '^'
