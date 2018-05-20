@@ -6,21 +6,27 @@ import (
 	"fmt"
 )
 
+// "Enum" for input tape move control.
 type StillRight bool
 
+// "Enum"'s alias values.
 const (
 	InStill StillRight = true
 	InRight StillRight = false
 )
 
+// "Enum" for memory tape move control.
 type LeftStillRight int8
 
+// "Enum"'s values.
 const (
 	MemLeft  LeftStillRight = iota
 	MemStill
 	MemRight
 )
 
+// Operation struct provides
+// changing of the machine state.
 type Operation struct {
 	MoveInput StillRight
 	MoveMem   LeftStillRight
@@ -28,67 +34,122 @@ type Operation struct {
 	State     uint64
 }
 
+// Snapshot struct provides information
+// about current state of the machine.
+type Snapshot struct {
+	InputSymbol  rune
+	MemorySymbol rune
+	State        uint64
+}
+
 type Program struct {
-	code        map[uint64]map[rune]Operation
+	code        map[Snapshot]Operation
 	emptySymbol rune
 	finalStates map[uint64]string
 }
 
+// Program constructor.
 func NewProgram(emptySymbol rune) Program {
 	return Program{
-		code:        make(map[uint64]map[rune]Operation),
+		code:        make(map[Snapshot]Operation),
 		emptySymbol: emptySymbol,
 		finalStates: make(map[uint64]string),
 	}
 }
 
-func (p Program) AddOperation(state uint64, char rune, operation Operation) {
-	operations, ok := p.code[state]
-	if !ok {
-		operations = make(map[rune]Operation)
-		p.code[state] = operations
-	}
-	operations[char] = operation
+// Set what operation will be performed
+// when the machine will be in the snapshot state.
+func (p Program) AddOperation(snapshot Snapshot, operation Operation) {
+	p.code[snapshot] = operation
 }
 
+// Adds finals states with their descriptions.
 func (p Program) AddFinalState(state uint64, description string) {
 	p.finalStates[state] = description
 }
 
-func Interpret(program Program, input string) (description string, err error) {
+// Returns interpretation of the state or error if it is not.
+func (p Program) Interpret(state uint64) (string, error) {
+	if desc, ok := p.finalStates[state]; ok {
+		return desc, nil
+	} else {
+		return "", errors.New("there is no such final state")
+	}
+}
+
+const DEBUG = false
+
+// Simulate program with the input tape.
+// Returns final state in which machine would stopped or error.
+func Simulate(program Program, input string) (state uint64, err error) {
+	// Tapes initialization.
 	inputTape := tape.Create(input, program.emptySymbol)
-	memory := tape.Create(string(program.emptySymbol), program.emptySymbol)
-	state := uint64(0)
+	memory := tape.Create("", program.emptySymbol)
+	state = uint64(0)
+
 	for {
-		char := inputTape.Now()
+		// For debug purposes.
+		if (DEBUG) {
+			fmt.Println("state", state)
+			fmt.Println(inputTape)
+			fmt.Println(memory)
+		}
+		char := inputTape.HeadSymbol()
+		// If input tape reaches empty symbol,
+		// it means that there is no input data,
+		// so the machine must end its work in the moment
+		// and have answer.
 		if char == program.emptySymbol {
-			if desc, ok := program.finalStates[state]; ok {
-				return desc, nil
+			if _, ok := program.finalStates[state]; ok {
+				// Program have done its work perfect.
+				return state, nil
 			} else {
-				return "", errors.New(fmt.Sprintf("Interpreting error in state %v: the state is not final.\n%s\n", state, memory.String()))
+				// Something wrong, check your program.
+				return 0, errors.New(
+					fmt.Sprintf(
+						"Interpreting error in state %v: the state is not final.\n"+
+							"Input tape:\n%s\n"+
+							"Memory tape:\n%s\n",
+						state, inputTape.String(), memory.String()))
 			}
 		}
-		if operations, ok := program.code[state]; ok {
-			if op, ok := operations[char]; ok {
-				memory.Set(op.Symbol)
-				switch op.MoveInput {
-				case InStill:
-				case InRight:
-					inputTape.RightShift()
-				}
-				switch op.MoveMem {
-				case MemLeft:
-					memory.LeftShift()
-				case MemStill:
-				case MemRight:
-					memory.RightShift()
-				}
-				state = op.State
-			} else {
-				return "", errors.New(fmt.Sprintf("Interpreting error in state %v: there is no operations for the character `%s`.\n%s\n", string(char), state, memory.String()))
+
+		// Snapshot construction.
+		snapshot := Snapshot{
+			InputSymbol:  char,
+			MemorySymbol: memory.HeadSymbol(),
+			State:        state,
+		}
+		// Try to get operation to perform.
+		if op, ok := program.code[snapshot]; ok {
+			// Operation found, performing.
+			// Writing new symbol to the memory.
+			memory.Set(op.Symbol)
+
+			// Move head of input tape.
+			switch op.MoveInput {
+			case InStill:
+			case InRight:
+				inputTape.HeadToRight()
 			}
+			// Move head of memory tape.
+			switch op.MoveMem {
+			case MemLeft:
+				memory.HeadToLeft()
+			case MemStill:
+			case MemRight:
+				memory.HeadToRight()
+			}
+			// Change the state to new state.
+			state = op.State
 		} else {
-			return "", errors.New(fmt.Sprintf("Interpreting error in state %v: there is no operations for the state.\n%s\n", state, memory.String()))
+			// Operation wasn't found,
+			// return error.
+			return 0, errors.New(
+				fmt.Sprintf("Interpreting error in state %v: there is no operation for the snapshot.\n"+
+					"Input tape:\n%s\n"+
+					"Memory tape:\n%s\n",
+					snapshot, inputTape.String(), memory.String()))
 		}
 	}
 }
